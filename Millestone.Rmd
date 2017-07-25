@@ -1,0 +1,228 @@
+---
+title: "Millestone"
+author: "Serafín Moral García"
+date: "6th June 2017"
+output: html_document
+---
+
+```{r}
+options(warn = -1) 
+```
+
+
+## Overview
+
+In this work we will get obtain the most frequent combinations of one, two and three consecutive words and we will show them. For this purpose, we will first download the data and preprocess it. Since the amount of data is quite large we will only consider the $1.5\%$ of the total data. 
+
+## Getting the data
+
+### Downloading the data and placing in a folder
+
+First of all, we create a specific folder for the project if it does not exist yet
+
+```{r cars}
+if(!file.exists("./capstone")){
+  dir.create("./capstone")
+}
+```
+
+The next step is to download the data from the url and to place it in the folder that we have just created, (if we have not done it before)
+
+```{r}
+url <- "https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip"
+
+if(!file.exists("./capstone/Coursera-SwiftKey.zip")){
+  download.file(url,destfile="./capstone/Coursera-SwiftKey.zip",mode = "wb")
+}
+```
+
+If we have not already unzipped the folder, we do it now.
+
+```{r}
+if(!file.exists("./capstone/final")){
+  unzip(zipfile="./capstone/Coursera-SwiftKey.zip",exdir="./capstone")
+}
+```
+
+### Getting the basic information about US datasets. 
+
+For each one of the US datasets, blogs, news and twitter, we will save each one of the lines of the dataset. In order to do it, we will make a connection file to de dataset and we will use the readLines function. After storing the lines we will close the connection.  
+```{r}
+connection_blogs <- file("./capstone/final/en_US/en_US.blogs.txt", open = "rb") 
+lines_blogs<-readLines(connection_blogs)
+close(connection_blogs)
+```
+
+```{r}
+connection_news <- file("./capstone/final/en_US/en_US.news.txt", open = "rb") 
+lines_news<-readLines(connection_news)
+close(connection_news)
+```
+
+```{r}
+connection_twitter <- file("./capstone/final/en_US/en_US.twitter.txt", open = "rb") 
+lines_twitter<-readLines(connection_twitter)
+close(connection_twitter)
+```
+
+In order to get the basic information we extract the number of words of each line of the file, and we sum them and make the average. 
+
+```{r}
+
+library(stringi)
+
+words_blogs <- stri_count_words(lines_blogs)
+num_lines_blogs <- length(words_blogs)
+num_words_blogs <- sum(words_blogs)
+mean_words_blogs <- mean(words_blogs)
+
+words_news <- stri_count_words(lines_news)
+num_lines_news <- length(words_news)
+num_words_news <- sum(words_news)
+mean_words_news <- mean(words_news)
+
+words_twitter <- stri_count_words(lines_twitter)
+num_lines_twitter <- length(words_twitter)
+num_words_twitter <- sum(words_twitter)
+mean_words_twitter <- mean(words_twitter)
+
+nums_lines <- c(num_lines_blogs, num_lines_news, num_lines_twitter)
+nums_words <- c(num_words_blogs, num_words_news, num_words_twitter)
+means_words <- c(mean_words_blogs, mean_words_news, mean_words_twitter)
+
+```
+
+Finally, we group the information that we have just got into a single data frame, which will contain the num of lines, as well as the sum of words in lines and the average of words in lines in twitter, blogs and news.
+
+```{r}
+file_names <- c("blogs", "news", "twitter")
+basic_information <- data.frame(file = file_names, num_lines = nums_lines, num_words = nums_words, mean_words = means_words)
+basic_information
+```
+
+## Sampling the data
+
+We choose only the $1.5%$ of the whole data, because the amount of data is too big and so we will make the exploratory data analysis only with a portion of it, being this analysis illustrative enough. 
+
+```{r}
+set.seed(750)
+
+num_lines_blogs_sample <- num_lines_blogs*0.015
+num_lines_news_sample <- num_lines_news*0.015
+num_lines_twitter_sample <- num_lines_twitter*0.015
+
+sample_lines_blogs <- sample(lines_blogs, num_lines_blogs_sample)
+sample_news_blogs <- sample(lines_news, num_lines_news_sample)
+sample_twitter_blogs <- sample(lines_twitter, num_lines_twitter_sample)
+
+data_sample <- paste(sample_lines_blogs, sample_news_blogs, sample_twitter_blogs)
+
+```
+
+
+## Cleaning the data
+
+The next thing that we will do is to clean the data set. In concrete, we will remove numbers, punctuation and stopwords. We will also transform the text to uppercase strip whitespaces from the text. We will use the tm package.
+
+
+```{r}
+
+library(tm)
+
+corpus <- VCorpus(VectorSource(data_sample))
+
+corpus_clean <- tm_map(corpus, removeNumbers)
+corpus_clean <- tm_map(corpus_clean, removePunctuation)
+corpus_clean <- tm_map(corpus_clean, stripWhitespace)
+corpus_clean <- tm_map(corpus_clean, removeWords, stopwords("english"))
+corpus_clean <- tm_map(corpus_clean, content_transformer(tolower))
+corpus_clean <- tm_map(corpus_clean, PlainTextDocument)
+
+
+```
+
+## Exploratory Data Analysis
+
+Once we have the clean data we will explore the most frequent combinations of one, two and three consecutive words. For this purpose, we firstly make functions that generate n-grams for $n = 1,2,3$. Recall that a n-gram is a contiguous sequence of n words. 
+
+
+```{r}
+
+library(RWeka)
+
+make_bigrams <- function(data){
+  bigrams <-  NGramTokenizer(data, Weka_control(min = 2, max = 2))
+  
+  return (bigrams)
+}
+
+make_trigrams <- function(data){
+  trigrams <-  NGramTokenizer(data, Weka_control(min = 3, max = 3))
+  
+  return (trigrams)
+}
+
+```
+
+Now we will generate the unigrams and we store in a data frame the words in a column and their frecuencies in the second column. We will save them in a separate file so as to we can use them in the predictive model without the neccessity of recalculating them. We will do the same with bigrams and trigrams. Bigrams represents the bigrams in a new format for saving the bigrams in the file. The same with trigrams2. 
+
+```{r}
+unigrams <- as.matrix(removeSparseTerms(TermDocumentMatrix(corpus_clean), 0.999))
+frecuencies_unigrams <- sort(rowSums(unigrams), decreasing = TRUE)
+names_unigrams <- names(frecuencies_unigrams)
+unigrams <- data.frame(words = names_unigrams, frequency = frecuencies_unigrams)
+saveRDS(unigrams,"unigrams.RData")
+
+bigrams <- removeSparseTerms(TermDocumentMatrix(corpus_clean, control = list(tokenize = make_bigrams)), 0.999)
+frecuencies_bigrams <- sort(rowSums(as.matrix(bigrams)), decreasing = TRUE)
+names_bigrams <- names(frecuencies_bigrams)
+bigrams <- data.frame(words = names_bigrams, frequency = frecuencies_bigrams)
+bigrams$words <- as.character(bigrams$words)
+str2 <- strsplit(bigrams$words,split=" ")
+bigrams2 <- transform(bigrams, one = sapply(str2,"[[",1), two = sapply(str2,"[[",2))
+bigrams2 <- data.frame(word1 = bigrams2$one,word2 = bigrams2$two,freq = bigrams2$frequency,stringsAsFactors=FALSE)
+saveRDS(bigrams2,"bigrams.RData")
+
+trigrams <- removeSparseTerms(TermDocumentMatrix(corpus_clean, control = list(tokenize = make_trigrams)), 0.999)
+frecuencies_trigrams <- sort(rowSums(as.matrix(trigrams)), decreasing = TRUE)
+names_trigrams <- names(frecuencies_trigrams)
+trigrams <- data.frame(words = names_trigrams, frequency = frecuencies_trigrams)
+trigrams$words <- as.character(trigrams$words)
+str3 <- strsplit(trigrams$words,split=" ")
+trigrams2 <- transform(trigrams, one = sapply(str3,"[[",1), two = sapply(str3,"[[",2),three = sapply(str3,"[[",3))
+trigrams2 <- data.frame(word1 = trigrams2$one,word2 = trigrams2$two, word3 = trigrams2$three, freq = trigrams2$frequency,stringsAsFactors=FALSE)
+saveRDS(trigrams2,"trigrams.RData")  
+
+```
+
+Finally, we will illustrate a histogram with the most frequent n-grams for $n = 1,2,3$. We will first make a function that plots a histograms given the data with the labels, its frequencies and the number of most frequent items to show. We will show the $20$ most frequent n-grams for $n = 1,2,3$.  
+
+```{r}
+library(ggplot2)
+
+create_plot <- function(data, num, label){
+    ggplot(data[1:num,], aes(reorder(words, -frequency), frequency)) +
+    labs(x = label, y = "Frequency") +
+    theme(axis.text.x = element_text(angle = 60, size = 12, hjust = 1)) +
+    geom_bar(stat = "identity", fill = "blue")
+}
+
+label_unigrams <- "Most 20 common unigrams"
+create_plot(unigrams,20,label_unigrams)
+
+label_bigrams <- "Most 20 common bigrams"
+create_plot(bigrams,20,label_bigrams)
+
+label_trigrams <- "Most 20 common trigrams"
+create_plot(trigrams,20,label_trigrams)
+
+```
+
+
+## Conclusions and Future Predictive Model
+
+Essentialy, in this work we have got the data and we have arranged it in such a way that we can work with the information. We have explored through histograms the more frequent combinations of one, two and three consecutive words. 
+
+Our future predictive model will attempt to predict the most probable word looking the two previous words and, if it is not posible, only the previous one. If it is not posible to look the previous words, because they are new or because there is no previous word entered, the algorithm only will take into consideration the most frequent word found.
+The predictive algorithm will be based on the frequencies of trigrams bigrams and unigrams associated. 
+
